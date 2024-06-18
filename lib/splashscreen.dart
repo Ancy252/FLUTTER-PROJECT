@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:tflite_v2/tflite_v2.dart';
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:image/image.dart' as img;
 
 class MySplash extends StatefulWidget {
   @override
@@ -13,8 +11,8 @@ class MySplash extends StatefulWidget {
 
 class _MySplashState extends State<MySplash> {
   File? _image;
+  String path = "";
   String? _diseaseResult;
-  Interpreter? _interpreter;
   List<String> labels = ["ESCA", "Leaf Blight", "Black rot", "Healthy"];
 
   @override
@@ -25,8 +23,15 @@ class _MySplashState extends State<MySplash> {
 
   Future<void> loadModel() async {
     try {
-      _interpreter = await Interpreter.fromAsset(
-          'assets/grape_disease_detection_model.tflite');
+      await Tflite.loadModel(
+          model: "assets/grape_disease_detection_model.tflite",
+          labels: "assets/labels.txt",
+          numThreads: 1, // defaults to 1
+          isAsset:
+              true, // defaults to true, set to false to load resources outside assets
+          useGpuDelegate:
+              false // defaults to false, set to true to use GPU delegate
+          );
       print("Model loaded successfully");
     } catch (e) {
       print("Failed to load model: $e");
@@ -39,17 +44,18 @@ class _MySplashState extends State<MySplash> {
 
     if (pickedFile != null) {
       setState(() {
+        path = pickedFile.path;
         _image = File(pickedFile.path);
         _diseaseResult = null; // Reset output when a new image is picked
       });
     }
   }
 
-  Uint8List _preprocessImage(File imageFile) {
-    final originalImage = img.decodeImage(imageFile.readAsBytesSync())!;
-    final resizedImage = img.copyResize(originalImage, width: 256, height: 256);
-    return resizedImage.getBytes();
-  }
+  // Uint8List _preprocessImage(File imageFile) {
+  //   final originalImage = img.decodeImage(imageFile.readAsBytesSync())!;
+  //   final resizedImage = img.copyResize(originalImage, width: 256, height: 256);
+  //   return resizedImage.getBytes();
+  // }
 
   Future<void> _detectDiseases() async {
     print("Detect Diseases button pressed.");
@@ -59,36 +65,41 @@ class _MySplashState extends State<MySplash> {
       return;
     }
 
-    if (_interpreter == null) {
-      print("Model interpreter not initialized.");
-      return;
-    }
-
-    //   try {
-    final input = _preprocessImage(_image!);
-    final output = List.filled(labels.length, 0).reshape([1, labels.length]);
-
-    _interpreter!.run(input, output);
-
-    // Debug print the output tensor for verification
-    print("Output tensor: $output");
-
-    setState(() {
-      final detectedIndex = output[0].indexWhere(
-          (element) => element == output[0].reduce((a, b) => a > b ? a : b));
-      final detectedLabel = labels[detectedIndex];
-      if (detectedLabel == "Healthy") {
-        _diseaseResult = "The leaf is healthy.";
-      } else {
-        _diseaseResult = "The leaf is affected by $detectedLabel.";
-      }
-    });
-    // // } catch (e) {
-    //   print("Failed to run model: $e");
-    //   setState(() {
-    //     _diseaseResult = "Failed to detect disease.";
-    //   });
+    // if (_interpreter == null) {
+    //   print("Model interpreter not initialized.");
+    //   return;
     // }
+
+    try {
+      //final input = _preprocessImage(_image!);
+      //final output = List.filled(labels.length, 0).reshape([1, labels.length]);
+
+      var output = await Tflite.runModelOnImage(
+          path: path, // required
+          imageMean: 127.5, // defaults to 127.5
+          imageStd: 127.5, // defaults to 127.5
+          threshold: 0.4, // defaults to 0.1
+          //numResultsPerClass: 2, // defaults to 5
+          asynch: true // defaults to true
+          );
+
+      // Debug print the output tensor for verification
+      print("Output tensor: $output");
+
+      setState(() {
+        final detectedLabel = output![0]['label'];
+        if (detectedLabel == "Healthy") {
+          _diseaseResult = "The leaf is healthy.";
+        } else {
+          _diseaseResult = "The leaf is affected by $detectedLabel.";
+        }
+      });
+    } catch (e) {
+      print("Failed to run model: $e");
+      setState(() {
+        _diseaseResult = "Failed to detect disease.";
+      });
+    }
   }
 
   @override
@@ -98,7 +109,7 @@ class _MySplashState extends State<MySplash> {
         title: Text(
           'LEAF HEALTH CHECKER',
           style: GoogleFonts.poppins(
-            textStyle: TextStyle(
+            textStyle: const TextStyle(
               color: Colors.white,
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -113,7 +124,7 @@ class _MySplashState extends State<MySplash> {
           Container(
             width: double.infinity,
             height: double.infinity,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -137,7 +148,7 @@ class _MySplashState extends State<MySplash> {
                         width: 200,
                         height: 200,
                       ),
-                SizedBox(height: 50),
+                const SizedBox(height: 50),
                 _buildButton(
                   context,
                   'Capture Image',
@@ -147,7 +158,7 @@ class _MySplashState extends State<MySplash> {
                   },
                   Colors.purpleAccent,
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 _buildButton(
                   context,
                   'Browse Gallery',
@@ -157,7 +168,7 @@ class _MySplashState extends State<MySplash> {
                   },
                   Colors.deepPurpleAccent,
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 _buildButton(
                   context,
                   'Detect Diseases',
@@ -165,11 +176,11 @@ class _MySplashState extends State<MySplash> {
                   _detectDiseases,
                   Colors.pinkAccent,
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 _diseaseResult != null
                     ? Text(
                         _diseaseResult!,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
                         ),
@@ -192,14 +203,14 @@ class _MySplashState extends State<MySplash> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20.0),
         ),
-        padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
       ),
       icon: Icon(icon,
           size: 30,
           color: Colors.white), // Ensure icon color is white for visibility
       label: Text(
         text,
-        style: TextStyle(
+        style: const TextStyle(
             fontSize: 18,
             color: Colors.white), // Ensure text color is white for visibility
       ),
@@ -209,7 +220,6 @@ class _MySplashState extends State<MySplash> {
 
   @override
   void dispose() {
-    _interpreter?.close();
     super.dispose();
   }
 }

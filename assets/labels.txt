@@ -1,4 +1,4 @@
-ESCA
-Leaf Blight
 Black Rot
+ESCA
 Healthy
+Leaf Blight
